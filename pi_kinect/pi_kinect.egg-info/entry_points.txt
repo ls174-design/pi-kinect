@@ -1,0 +1,5 @@
+[console_scripts]
+pi-kinect = pi_kinect.cli:main
+pi-kinect-probe = pi_kinect.cli:probe_devices
+pi-kinect-stream = pi_kinect.cli:start_streaming
+pi-kinect-viewer = pi_kinect.cli:start_viewer

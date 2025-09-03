@@ -1,0 +1,36 @@
+[Unit]
+Description=Pi-Kinect Streaming Service
+Documentation=https://github.com/ls174-design/pi-kinect
+After=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+User=pi
+Group=video
+WorkingDirectory=/home/pi
+ExecStart=/usr/local/bin/pi-kinect stream --host 0.0.0.0 --port 8080
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=pi-kinect
+
+# Environment variables
+Environment=PI_KINECT_LOG_LEVEL=INFO
+Environment=PI_KINECT_LOG_FILE=/var/log/pi-kinect.log
+
+# Security settings
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log /tmp
+
+# Resource limits
+LimitNOFILE=65536
+MemoryMax=512M
+
+[Install]
+WantedBy=multi-user.target

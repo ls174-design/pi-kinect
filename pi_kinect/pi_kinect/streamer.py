@@ -53,7 +53,6 @@ class KinectStreamer(LoggerMixin):
             config: Configuration object
         """
         self.config = config
-        self.logger = get_logger(__name__)
         
         # Frame storage
         self.frame_queue: Queue = Queue(maxsize=10)
