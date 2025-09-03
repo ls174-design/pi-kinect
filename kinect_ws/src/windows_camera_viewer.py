@@ -113,6 +113,48 @@ class CameraViewer:
         except Exception as e:
             return False, str(e)
     
+    def check_stream_endpoint(self):
+        """Check if the stream endpoint is working and what type of data it serves"""
+        try:
+            response = requests.get(self.get_stream_url(), timeout=5)
+            if response.status_code == 200:
+                content_type = response.headers.get('Content-Type', '')
+                content_length = len(response.content)
+                
+                # Check if it's actually image data or status frame
+                if 'image/' in content_type:
+                    # Try to decode as image to see if it's real camera data
+                    try:
+                        from PIL import Image
+                        import io
+                        image = Image.open(io.BytesIO(response.content))
+                        # Check if it's a status frame (dark green background)
+                        # by sampling a few pixels
+                        pixels = list(image.getdata())
+                        if len(pixels) > 1000:
+                            # Sample some pixels to detect status frame
+                            sample_pixels = pixels[::len(pixels)//100]  # Sample 100 pixels
+                            green_pixels = sum(1 for r, g, b in sample_pixels if g > r and g > b and g > 100)
+                            # Check for text patterns that indicate status frame
+                            has_text_pattern = any(
+                                (r, g, b) == (0, 255, 0) or (r, g, b) == (255, 255, 255) 
+                                for r, g, b in sample_pixels
+                            )
+                            if green_pixels > 50 and has_text_pattern:  # Mostly green pixels with text = status frame
+                                return True, "status_frame", content_length
+                            else:
+                                return True, "real_camera", content_length
+                        else:
+                            return True, "unknown", content_length
+                    except Exception as img_e:
+                        return True, "image_decode_error", content_length
+                else:
+                    return True, "non_image", content_length
+            else:
+                return False, f"HTTP {response.status_code}", 0
+        except Exception as e:
+            return False, str(e), 0
+    
     def toggle_connection(self):
         """Toggle camera stream connection"""
         if self.streaming:
@@ -133,14 +175,37 @@ class CameraViewer:
             messagebox.showerror("Connection Error", f"Could not connect to Raspberry Pi at {self.pi_ip.get()}:{self.pi_port.get()}")
             return
         
+        # Check what type of stream we're getting
+        stream_working, stream_type, content_size = self.check_stream_endpoint()
+        if not stream_working:
+            self.update_status("Stream endpoint failed", "red")
+            self.log_info(f"Stream endpoint error: {stream_type}")
+            messagebox.showerror("Stream Error", f"Stream endpoint not working: {stream_type}")
+            return
+        
         self.streaming = True
         self.connect_btn.config(text="Disconnect")
-        self.update_status("Connected", "green")
-        self.log_info("Successfully connected to Raspberry Pi camera stream")
+        
+        # Determine status based on stream type
+        if stream_type == "status_frame":
+            self.update_status("Connected (Status Only)", "orange")
+            self.log_info("⚠️ WARNING: Connected to status frame, not real camera data")
+            self.log_info("The server is running but no real camera/Kinect is available")
+        elif stream_type == "real_camera":
+            self.update_status("Connected", "green")
+            self.log_info("✅ Successfully connected to real camera stream")
+        else:
+            self.update_status("Connected (Unknown)", "orange")
+            self.log_info(f"Connected but stream type unknown: {stream_type}")
         
         if isinstance(status, dict):
             self.log_info(f"Camera available: {status.get('camera_available', 'Unknown')}")
             self.log_info(f"Frame available: {status.get('frame_available', 'Unknown')}")
+            if 'kinect_available' in status:
+                self.log_info(f"Kinect available: {status.get('kinect_available', 'Unknown')}")
+                self.log_info(f"Kinect method: {status.get('kinect_method', 'Unknown')}")
+        
+        self.log_info(f"Stream content size: {content_size} bytes")
         
         # Start streaming thread
         self.stream_thread = threading.Thread(target=self.stream_loop, daemon=True)

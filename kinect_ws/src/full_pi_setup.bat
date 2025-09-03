@@ -1,6 +1,6 @@
 @echo off
-echo Deploying Diagnostic Tools to Raspberry Pi
-echo ==========================================
+echo Complete Raspberry Pi Setup
+echo ===========================
 
 REM Check if Python is available
 python --version >nul 2>&1
@@ -24,11 +24,18 @@ REM Get Pi password
 set /p PI_PASSWORD="Enter Pi password: "
 
 echo.
-echo Deploying to Pi at %PI_IP%...
+echo Starting complete Pi setup...
+echo This will:
+echo 1. Deploy diagnostic tools to Pi
+echo 2. Install all required libraries
+echo 3. Run diagnostic check
+echo 4. Check streaming service status
+echo.
+echo This may take 15-20 minutes...
 echo.
 
-python deploy_to_pi.py --pi-host %PI_IP% --pi-password %PI_PASSWORD%
+python full_pi_setup.py --pi-host %PI_IP% --pi-password %PI_PASSWORD%
 
 echo.
-echo Deployment complete!
+echo Setup complete!
 pause

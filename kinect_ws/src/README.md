@@ -1,36 +1,61 @@
-# Raspberry Pi Camera Streaming Setup
+# Raspberry Pi Kinect Streaming Setup
 
-This project provides a complete solution for streaming camera feeds from a Raspberry Pi to a Windows laptop, bypassing the Cursor Remote SSH ARM architecture limitations.
+This project provides a complete solution for streaming Kinect camera feeds from a Raspberry Pi to a Windows laptop, with comprehensive diagnostic tools and automated setup scripts.
 
 ## 🎯 Quick Start
 
-### 1. Set up Raspberry Pi
-
-```bash
-# SSH into your Raspberry Pi
-ssh pi@192.168.1.9  # Replace with your Pi's IP
-
-# Install dependencies
-sudo apt-get update
-sudo apt-get install -y python3-pip python3-opencv python3-numpy python3-pil
-
-# Install Python packages
-pip3 install opencv-python numpy pillow requests
-```
-
-### 2. Sync files to Raspberry Pi
+### 1. Automated Setup (Recommended)
 
 From your Windows machine:
 
 ```bash
 # Navigate to the project directory
-cd "C:\Users\lysan\pi backup\kinect_ws\src"
+cd "C:\Users\lysan\Desktop\pi-kinect\kinect_ws\src"
 
-# Sync files to Pi
-python sync_to_pi.py --pi-host 192.168.1.9 --pi-user pi --install-deps --setup-service --start-service
+# Copy setup files to Pi
+copy_to_pi_simple.bat
+
+# Follow the prompts to enter your Pi's IP, username, and password
 ```
 
-### 3. View camera feed on Windows
+Then on your Raspberry Pi:
+
+```bash
+# SSH into your Pi
+ssh pi@192.168.1.9  # Replace with your Pi's IP
+
+# Run the complete setup
+cd kinect_setup
+bash complete_pi_setup.sh
+```
+
+### 2. Manual Setup (Alternative)
+
+If you prefer manual installation:
+
+```bash
+# SSH into your Raspberry Pi
+ssh pi@192.168.1.9  # Replace with your Pi's IP
+
+# Install Kinect dependencies (following GitHub gist method)
+bash install_freenect_from_source.sh
+
+# Install other dependencies
+sudo apt-get install -y python3-pip python3-opencv python3-numpy python3-pil
+pip3 install opencv-python numpy pillow requests
+```
+
+### 3. Test the Setup
+
+```bash
+# Check if everything is working
+bash check_libraries_on_pi.sh
+
+# Start the Kinect streamer
+python3 kinect_unified_streamer.py
+```
+
+### 4. View Kinect feed on Windows
 
 ```bash
 # Run the Windows camera viewer
@@ -41,22 +66,38 @@ python windows_camera_viewer.py
 
 ```
 kinect_ws/src/
-├── camera_streamer.py      # Basic camera streaming server
-├── kinect_streamer.py      # Kinect-specific streaming server
-├── sync_to_pi.py          # File synchronization script
-├── windows_camera_viewer.py # Windows client application
-├── requirements.txt        # Python dependencies
-└── README.md              # This file
+├── kinect_unified_streamer.py    # Main Kinect streaming server (with fallback to OpenCV)
+├── windows_camera_viewer.py      # Windows client application
+├── requirements.txt              # Python dependencies
+├── 
+├── 🔧 Setup Scripts:
+├── complete_pi_setup.sh          # Complete automated setup for Pi
+├── install_freenect_from_source.sh # Kinect installation (GitHub gist method)
+├── setup_on_pi.sh               # Basic Pi setup script
+├── check_libraries_on_pi.sh     # Comprehensive diagnostic script
+├── 
+├── 📤 Deployment Scripts:
+├── copy_to_pi_simple.py/.bat    # Copy setup files to Pi
+├── robust_pi_setup.py/.bat      # Robust Pi setup with error handling
+├── manual_pi_setup.py/.bat      # Step-by-step manual setup
+├── 
+├── 🔍 Diagnostic Scripts:
+├── check_pi_libraries.py        # Python diagnostic script
+├── ssh_troubleshoot.py/.bat     # SSH connectivity diagnostics
+├── kinect_diagnostic.py         # Kinect-specific diagnostics
+├── 
+└── README.md                    # This file
 ```
 
 ## 🚀 Features
 
-### Camera Streaming Server (Raspberry Pi)
+### Kinect Streaming Server (Raspberry Pi)
+- **Kinect Integration**: Native freenect support with OpenCV fallback
 - **HTTP-based streaming**: Access camera feed via web browser
 - **Multiple formats**: RGB, depth (for Kinect), and IR streams
 - **Real-time display**: Low-latency streaming with configurable quality
 - **REST API**: JSON endpoints for frame data and status
-- **Auto-restart**: Systemd service for automatic startup
+- **Auto-fallback**: Automatically switches to OpenCV if Kinect unavailable
 
 ### Windows Client Application
 - **GUI interface**: Easy-to-use Tkinter-based viewer
@@ -65,19 +106,20 @@ kinect_ws/src/
 - **Connection management**: Connect/disconnect with status monitoring
 - **Configurable**: Set Pi IP address and port
 
-### File Synchronization
-- **Automated sync**: Push code changes to Pi automatically
-- **Dependency management**: Install required packages on Pi
-- **Service setup**: Configure systemd services for auto-start
-- **Cross-platform**: Works on Windows, Linux, and macOS
+### Automated Setup & Diagnostics
+- **Complete setup scripts**: Automated installation of all dependencies
+- **Comprehensive diagnostics**: Check hardware, libraries, and connectivity
+- **Multiple installation methods**: System packages, pip, and source builds
+- **Error handling**: Robust scripts with detailed error reporting
+- **Cross-platform deployment**: Windows batch files for easy Pi management
 
 ## 🎮 Usage
 
-### Basic Camera Streaming
+### Kinect Streaming (Primary Method)
 
-1. **Start the camera server on Pi:**
+1. **Start the Kinect server on Pi:**
    ```bash
-   python3 camera_streamer.py --host 0.0.0.0 --port 8080
+   python3 kinect_unified_streamer.py
    ```
 
 2. **Access via web browser:**
@@ -90,47 +132,46 @@ kinect_ws/src/
    python windows_camera_viewer.py
    ```
 
-### Kinect Streaming
+### Diagnostic & Setup Commands
 
-1. **Install Kinect dependencies on Pi:**
+1. **Check system status:**
    ```bash
-   sudo apt-get install python3-freenect
-   # or
-   pip3 install freenect
+   bash check_libraries_on_pi.sh
    ```
 
-2. **Start Kinect server:**
+2. **Install Kinect dependencies:**
    ```bash
-   python3 kinect_streamer.py --host 0.0.0.0 --port 8080
+   bash install_freenect_from_source.sh
    ```
 
-3. **View RGB and depth streams:**
-   ```
-   http://192.168.1.9:8080
+3. **Complete system setup:**
+   ```bash
+   bash complete_pi_setup.sh
    ```
 
 ### Development Workflow
 
 1. **Make changes on Windows**
-2. **Sync to Pi:**
+2. **Copy files to Pi:**
    ```bash
-   python sync_to_pi.py --pi-host 192.168.1.9
+   copy_to_pi_simple.bat
    ```
 3. **Test on Pi:**
    ```bash
    ssh pi@192.168.1.9
-   python3 camera_streamer.py
+   cd kinect_setup
+   python3 kinect_unified_streamer.py
    ```
 
 ## 🔧 Configuration
 
-### Camera Settings
+### Kinect Settings
 
-Edit `camera_streamer.py` to modify:
+Edit `kinect_unified_streamer.py` to modify:
 - **Resolution**: Default 640x480
 - **Frame rate**: Default 30 FPS
 - **JPEG quality**: Default 85%
-- **Camera index**: Default 0 (first camera)
+- **Fallback behavior**: OpenCV camera index (default 0)
 
 ### Network Settings
 
@@ -138,24 +179,74 @@ Edit `camera_streamer.py` to modify:
 - **Port**: Default 8080 (change if needed)
 - **Firewall**: Ensure port is open on Pi
 
-### Service Configuration
+### Installation Methods
 
-The systemd service runs automatically on boot:
-```bash
-# Check service status
-sudo systemctl status camera-stream.service
+The setup scripts support multiple installation approaches:
 
-# Restart service
-sudo systemctl restart camera-stream.service
+1. **System packages** (preferred when available):
+   ```bash
+   sudo apt-get install libfreenect-dev libfreenect0.5
+   ```
 
-# View logs
-sudo journalctl -u camera-stream.service -f
-```
+2. **Source build** (GitHub gist method):
+   ```bash
+   bash install_freenect_from_source.sh
+   ```
+
+3. **Complete automated setup**:
+   ```bash
+   bash complete_pi_setup.sh
+   ```
 
 ## 🐛 Troubleshooting
 
-### Connection Issues
+### Quick Diagnostics
 
+1. **Run comprehensive diagnostics:**
+   ```bash
+   bash check_libraries_on_pi.sh
+   ```
+
+2. **Check SSH connectivity:**
+   ```bash
+   ssh_troubleshoot.bat
+   ```
+
+3. **Test Kinect specifically:**
+   ```bash
+   python3 kinect_diagnostic.py
+   ```
+
+### Common Issues
+
+#### Kinect Not Detected
+1. **Check USB connection:**
+   ```bash
+   lsusb | grep -i microsoft
+   ```
+
+2. **Verify udev rules:**
+   ```bash
+   ls -la /etc/udev/rules.d/51-kinect.rules
+   ```
+
+3. **Test freenect directly:**
+   ```bash
+   freenect-glview
+   ```
+
+#### Python Import Errors
+1. **Check freenect installation:**
+   ```bash
+   python3 -c "import freenect; print('Freenect available')"
+   ```
+
+2. **Reinstall if needed:**
+   ```bash
+   bash install_freenect_from_source.sh
+   ```
+
+#### Connection Issues
 1. **Check Pi IP address:**
    ```bash
    hostname -I
@@ -166,32 +257,15 @@ sudo journalctl -u camera-stream.service -f
    ping 192.168.1.9
    ```
 
-3. **Check if service is running:**
+3. **Verify streaming service:**
    ```bash
-   sudo systemctl status camera-stream.service
-   ```
-
-### Camera Issues
-
-1. **Check camera permissions:**
-   ```bash
-   ls -la /dev/video*
-   ```
-
-2. **Test camera manually:**
-   ```bash
-   python3 -c "import cv2; cap = cv2.VideoCapture(0); print('Camera available:', cap.isOpened())"
-   ```
-
-3. **Try different camera index:**
-   ```bash
-   python3 camera_streamer.py --camera 1
+   curl http://192.168.1.9:8080/status
    ```
 
 ### Performance Issues
 
 1. **Reduce frame rate:**
-   - Edit `camera_streamer.py` and change the sleep time in `capture_frames()`
+   - Edit `kinect_unified_streamer.py` and change the sleep time in `capture_frames()`
 
 2. **Lower JPEG quality:**
    - Change `cv2.IMWRITE_JPEG_QUALITY` value (lower = smaller files)
@@ -199,26 +273,35 @@ sudo journalctl -u camera-stream.service -f
 3. **Reduce resolution:**
    - Modify `cap.set(cv2.CAP_PROP_FRAME_WIDTH/HEIGHT)` values
 
-## 🔄 Alternative Development Approaches
+## 🔄 Development Workflow
 
-Since Cursor Remote SSH doesn't support ARM:
+### Recommended Approach: File Sync + SSH
+
+1. **Edit code on Windows** (using Cursor or VS Code)
+2. **Copy files to Pi:**
+   ```bash
+   copy_to_pi_simple.bat
+   ```
+3. **Test on Pi via SSH:**
+   ```bash
+   ssh pi@192.168.1.9
+   cd kinect_setup
+   python3 kinect_unified_streamer.py
+   ```
+
+### Alternative Development Methods
 
 ### 1. VS Code Remote SSH
 - Install VS Code with Remote SSH extension
 - Better ARM support than Cursor
 - Full development environment on Pi
 
-### 2. File Sync + Terminal
-- Use `sync_to_pi.py` for file synchronization
-- SSH for terminal access
-- Edit on Windows, test on Pi
-
-### 3. Git-based Workflow
+### 2. Git-based Workflow
 - Push changes to Git repository
 - Pull on Pi for testing
 - Automated deployment with webhooks
 
-### 4. Docker Development
+### 3. Docker Development
 - Containerize the application
 - Run on both Windows and Pi
 - Consistent development environment
@@ -256,8 +339,44 @@ Since Cursor Remote SSH doesn't support ARM:
 
 This project is licensed under the MIT License - see the LICENSE file for details.
 
+## 📋 Installation Methods Reference
+
+### Kinect Installation (GitHub Gist Method)
+
+The project uses the proven installation method from [this GitHub gist](https://gist.github.com/Collin-Emerson-Miller/8b4630c767aeb4a0b324ea4070c3db9d):
+
+1. **System dependencies:**
+   ```bash
+   sudo apt-get install git-core cmake freeglut3-dev pkg-config build-essential libxmu-dev libxi-dev libusb-1.0-0-dev cython python3-dev python3-numpy
+   ```
+
+2. **Build libfreenect:**
+   ```bash
+   git clone git://github.com/OpenKinect/libfreenect.git
+   cd libfreenect
+   mkdir build && cd build
+   cmake -L ..
+   make
+   sudo make install
+   sudo ldconfig /usr/local/lib64/
+   ```
+
+3. **Install Python bindings:**
+   ```bash
+   cd ../wrappers/python
+   sudo python3 setup.py install
+   ```
+
+4. **Set up USB permissions:**
+   ```bash
+   sudo adduser $USER video
+   sudo adduser $USER plugdev
+   # Create udev rules (handled by setup scripts)
+   ```
+
 ## 🙏 Acknowledgments
 
-- OpenKinect project for libfreenect
+- [OpenKinect project](https://github.com/OpenKinect/libfreenect) for libfreenect
+- [GitHub gist by Collin-Emerson-Miller](https://gist.github.com/Collin-Emerson-Miller/8b4630c767aeb4a0b324ea4070c3db9d) for the proven installation method
 - OpenCV community for computer vision tools
 - Raspberry Pi Foundation for the amazing hardware

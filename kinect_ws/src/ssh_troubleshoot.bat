@@ -1,6 +1,6 @@
 @echo off
-echo Deploying Diagnostic Tools to Raspberry Pi
-echo ==========================================
+echo SSH Troubleshooting Tool for Raspberry Pi
+echo =========================================
 
 REM Check if Python is available
 python --version >nul 2>&1
@@ -20,15 +20,19 @@ if errorlevel 1 (
 REM Get Pi IP address
 set /p PI_IP="Enter Raspberry Pi IP address: "
 
+REM Get Pi username
+set /p PI_USER="Enter Pi username (default: pi): "
+if "%PI_USER%"=="" set PI_USER=pi
+
 REM Get Pi password
 set /p PI_PASSWORD="Enter Pi password: "
 
 echo.
-echo Deploying to Pi at %PI_IP%...
+echo Testing SSH connection to %PI_USER%@%PI_IP%...
 echo.
 
-python deploy_to_pi.py --pi-host %PI_IP% --pi-password %PI_PASSWORD%
+python ssh_troubleshoot.py --pi-host %PI_IP% --pi-user %PI_USER% --pi-password %PI_PASSWORD%
 
 echo.
-echo Deployment complete!
+echo Troubleshooting complete!
 pause
