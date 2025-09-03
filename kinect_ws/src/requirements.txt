@@ -1,8 +1,0 @@
-# Camera streaming requirements
-opencv-python>=4.5.0
-numpy>=1.19.0
-pillow>=8.0.0
-requests>=2.25.0
-
-# Optional: For Kinect support
-# freenect>=0.2.0  # Install separately on Pi: sudo apt-get install python3-freenect

@@ -1,0 +1,16 @@
+# Pi-Kinect Core Dependencies
+# Pinned versions for Raspberry Pi OS compatibility
+
+# Computer Vision
+opencv-python>=4.5.0,<5.0.0
+numpy>=1.19.0,<2.0.0
+pillow>=8.0.0,<11.0.0
+
+# Network and HTTP
+requests>=2.25.0,<3.0.0
+
+# Configuration
+pyyaml>=5.4.0,<7.0.0
+
+# Optional: Kinect support (install separately on Pi)
+# freenect>=0.2.0  # Install via: sudo apt-get install python3-freenect

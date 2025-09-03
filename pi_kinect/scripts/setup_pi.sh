@@ -1,6 +1,8 @@
 #!/bin/bash
-echo "🔧 Raspberry Pi Library Setup"
-echo "============================="
+set -euo pipefail
+
+echo "🔧 Pi-Kinect Raspberry Pi Setup"
+echo "================================"
 
 # Check if we're running as root
 if [ "$EUID" -eq 0 ]; then
@@ -14,6 +16,12 @@ sudo apt-get update
 # Install system dependencies
 echo "📦 Installing system dependencies..."
 sudo apt-get install -y \
+    python3-pip \
+    python3-dev \
+    python3-opencv \
+    python3-numpy \
+    python3-pil \
+    python3-tk \
     cmake \
     libusb-1.0-0-dev \
     libxmu-dev \
@@ -23,17 +31,8 @@ sudo apt-get install -y \
     libxrandr-dev \
     libxinerama-dev \
     libxcursor-dev \
-    python3-dev \
-    python3-numpy \
     swig \
     build-essential
-
-# Install OpenCV system libraries
-echo "📦 Installing OpenCV system libraries..."
-sudo apt-get install -y \
-    libopencv-dev \
-    python3-opencv \
-    libopencv-contrib-dev
 
 # Install freenect system libraries
 echo "📦 Installing freenect system libraries..."
@@ -49,25 +48,32 @@ else
     echo "⚠️ python3-freenect not available in repositories, will install via pip"
 fi
 
-# Install Python package manager
-echo "📦 Installing Python package manager..."
-sudo apt-get install -y python3-pip
-
-# Install Python packages
-echo "🐍 Installing Python packages..."
+# Install Pi-Kinect
+echo "🐍 Installing Pi-Kinect..."
 pip3 install --upgrade pip
+pip3 install pi-kinect
 
-# Install NumPy from system package first (pre-compiled)
-echo "📦 Installing NumPy from system package (pre-compiled)..."
-sudo apt-get install -y python3-numpy
+# Create udev rules for non-root access
+echo "🔧 Setting up udev rules for non-root access..."
+sudo tee /etc/udev/rules.d/51-kinect.rules > /dev/null << 'EOF'
+# Kinect v1 udev rules
+SUBSYSTEM=="usb", ATTR{idVendor}=="045e", ATTR{idProduct}=="02b0", MODE="0666"
+SUBSYSTEM=="usb", ATTR{idVendor}=="045e", ATTR{idProduct}=="02ad", MODE="0666"
+SUBSYSTEM=="usb", ATTR{idVendor}=="045e", ATTR{idProduct}=="02ae", MODE="0666"
+SUBSYSTEM=="usb", ATTR{idVendor}=="045e", ATTR{idProduct}=="02c2", MODE="0666"
+SUBSYSTEM=="usb", ATTR{idVendor}=="045e", ATTR{idProduct}=="02be", MODE="0666"
+SUBSYSTEM=="usb", ATTR{idVendor}=="045e", ATTR{idProduct}=="02bf", MODE="0666"
+EOF
 
-# Install other packages
-echo "📦 Installing other Python packages..."
-pip3 install \
-    opencv-python \
-    pillow \
-    requests \
-    freenect
+# Reload udev rules
+echo "🔄 Reloading udev rules..."
+sudo udevadm control --reload-rules
+sudo udevadm trigger
+
+# Add user to required groups
+echo "👤 Adding user to required groups..."
+sudo adduser $USER video
+sudo adduser $USER plugdev
 
 # Update library cache
 echo "🔄 Updating library cache..."
@@ -110,14 +116,23 @@ except ImportError as e:
     print('❌ Freenect import failed:', e)
 except Exception as e:
     print('⚠️ Freenect test failed:', e)
+
+try:
+    import pi_kinect
+    print('✅ Pi-Kinect package imported successfully')
+    print('✅ Pi-Kinect version:', pi_kinect.__version__)
+except ImportError as e:
+    print('❌ Pi-Kinect import failed:', e)
 "
 
 echo ""
 echo "🎯 Installation complete!"
 echo ""
 echo "Next steps:"
-echo "1. Connect your Kinect to the Pi"
-echo "2. Run: python3 kinect_unified_streamer.py"
-echo "3. Open http://YOUR_PI_IP:8080 in your browser"
+echo "1. Reboot your Pi or log out/in to apply group changes"
+echo "2. Connect your Kinect"
+echo "3. Test with: pi-kinect probe"
+echo "4. Start streaming with: pi-kinect stream"
+echo "5. Open http://YOUR_PI_IP:8080 in your browser"
 echo ""
 echo "If you see any errors above, please check the installation logs."

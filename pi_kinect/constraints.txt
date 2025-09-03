@@ -1,0 +1,19 @@
+# Pi-Kinect Dependency Constraints
+# Use with: pip install -r requirements.txt -c constraints.txt
+
+# Core dependencies with exact versions for Raspberry Pi OS
+opencv-python==4.8.1.78
+numpy==1.24.3
+pillow==10.0.1
+requests==2.31.0
+pyyaml==6.0.1
+
+# Development dependencies
+pytest==7.4.2
+pytest-cov==4.1.0
+black==23.7.0
+isort==5.12.0
+flake8==6.0.0
+mypy==1.5.1
+bandit==1.7.5
+pre-commit==3.3.3
