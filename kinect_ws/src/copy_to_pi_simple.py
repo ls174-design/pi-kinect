@@ -38,7 +38,8 @@ def copy_files_to_pi(pi_host, pi_user, pi_password):
             "check_pi_libraries.py",
             "install_pi_libraries.sh",
             "complete_pi_setup.sh",
-            "install_freenect_from_source.sh"
+            "install_freenect_from_source.sh",
+            "fix_opencv_installation.sh"
         ]
         
         sftp = ssh_client.open_sftp()

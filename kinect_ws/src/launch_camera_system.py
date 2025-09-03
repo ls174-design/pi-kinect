@@ -1,360 +1,230 @@
 #!/usr/bin/env python3
 """
-Camera System Launcher
-Starts both the PC camera viewer and Pi camera stream with one click
+Comprehensive camera system launcher
+Handles Pi connectivity, streaming service, and camera viewer
 """
 
-import subprocess
-import sys
-import os
-import time
-import threading
 import tkinter as tk
 from tkinter import ttk, messagebox
-import webbrowser
+import subprocess
+import threading
+import time
 import requests
-from ssh_manager import SSHManager
+import os
+import sys
 
 class CameraSystemLauncher:
     def __init__(self):
         self.root = tk.Tk()
         self.root.title("Camera System Launcher")
-        self.root.geometry("500x400")
-        self.root.resizable(False, False)
+        self.root.geometry("600x500")
         
         # Configuration
-        self.pi_ip = tk.StringVar(value="192.168.1.9")  # Default Pi IP
-        self.pi_port = tk.StringVar(value="8080")
-        self.pi_user = tk.StringVar(value="ls")  # Default Pi user (updated for your setup)
-        self.pc_viewer_process = None
-        self.pi_stream_process = None
-        self.ssh_manager = None
+        self.pi_host = "192.168.1.9"
+        self.pi_port = 8080
         
         self.setup_ui()
         
     def setup_ui(self):
-        """Set up the user interface"""
+        """Setup the user interface"""
         # Main frame
         main_frame = ttk.Frame(self.root, padding="20")
-        main_frame.pack(fill=tk.BOTH, expand=True)
+        main_frame.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
         
         # Title
-        title_label = ttk.Label(main_frame, text="Camera System Launcher", 
+        title_label = ttk.Label(main_frame, text="🎥 Camera System Launcher", 
                                font=("Arial", 16, "bold"))
-        title_label.pack(pady=(0, 20))
-        
-        # Configuration frame
-        config_frame = ttk.LabelFrame(main_frame, text="Configuration", padding="10")
-        config_frame.pack(fill=tk.X, pady=(0, 20))
-        
-        # Pi IP configuration
-        ip_frame = ttk.Frame(config_frame)
-        ip_frame.pack(fill=tk.X, pady=5)
-        ttk.Label(ip_frame, text="Raspberry Pi IP:").pack(side=tk.LEFT)
-        ip_entry = ttk.Entry(ip_frame, textvariable=self.pi_ip, width=20)
-        ip_entry.pack(side=tk.RIGHT)
-        
-        # Pi User configuration
-        user_frame = ttk.Frame(config_frame)
-        user_frame.pack(fill=tk.X, pady=5)
-        ttk.Label(user_frame, text="Pi Username:").pack(side=tk.LEFT)
-        user_entry = ttk.Entry(user_frame, textvariable=self.pi_user, width=15)
-        user_entry.pack(side=tk.RIGHT)
-        
-        # Port configuration
-        port_frame = ttk.Frame(config_frame)
-        port_frame.pack(fill=tk.X, pady=5)
-        ttk.Label(port_frame, text="Port:").pack(side=tk.LEFT)
-        port_entry = ttk.Entry(port_frame, textvariable=self.pi_port, width=10)
-        port_entry.pack(side=tk.RIGHT)
-        
-        # Control buttons frame
-        button_frame = ttk.Frame(main_frame)
-        button_frame.pack(fill=tk.X, pady=(0, 20))
-        
-        # Launch button
-        self.launch_btn = ttk.Button(button_frame, text="🚀 Launch Camera System", 
-                                   command=self.launch_system, style="Accent.TButton")
-        self.launch_btn.pack(side=tk.LEFT, padx=(0, 10))
-        
-        # Stop button
-        self.stop_btn = ttk.Button(button_frame, text="⏹️ Stop All", 
-                                 command=self.stop_system, state=tk.DISABLED)
-        self.stop_btn.pack(side=tk.LEFT, padx=(0, 10))
-        
-        # Test connection button
-        self.test_btn = ttk.Button(button_frame, text="🔍 Test Pi Connection", 
-                                 command=self.test_pi_connection)
-        self.test_btn.pack(side=tk.LEFT, padx=(0, 5))
-        
-        # Setup SSH Auth button
-        self.setup_ssh_btn = ttk.Button(button_frame, text="🔐 Setup SSH Auth", 
-                                      command=self.setup_ssh_authentication)
-        self.setup_ssh_btn.pack(side=tk.LEFT)
+        title_label.grid(row=0, column=0, columnspan=2, pady=(0, 20))
         
         # Status frame
-        status_frame = ttk.LabelFrame(main_frame, text="Status", padding="10")
-        status_frame.pack(fill=tk.BOTH, expand=True)
+        status_frame = ttk.LabelFrame(main_frame, text="System Status", padding="10")
+        status_frame.grid(row=1, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 10))
         
-        # Status text
-        self.status_text = tk.Text(status_frame, height=10, width=50, wrap=tk.WORD)
-        self.status_text.pack(fill=tk.BOTH, expand=True)
+        self.status_label = ttk.Label(status_frame, text="Status: Checking...", 
+                                    foreground="orange")
+        self.status_label.grid(row=0, column=0, sticky=tk.W)
         
-        # Scrollbar for status text
-        scrollbar = ttk.Scrollbar(status_frame, orient=tk.VERTICAL, command=self.status_text.yview)
-        scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
-        self.status_text.configure(yscrollcommand=scrollbar.set)
+        # Pi configuration
+        config_frame = ttk.LabelFrame(main_frame, text="Pi Configuration", padding="10")
+        config_frame.grid(row=2, column=0, columnspan=2, sticky=(tk.W, tk.E), pady=(0, 10))
         
-        # Quick access frame
-        quick_frame = ttk.LabelFrame(main_frame, text="Quick Access", padding="10")
-        quick_frame.pack(fill=tk.X, pady=(10, 0))
+        ttk.Label(config_frame, text="Pi IP Address:").grid(row=0, column=0, sticky=tk.W, pady=5)
+        self.pi_ip_entry = ttk.Entry(config_frame, width=20)
+        self.pi_ip_entry.insert(0, self.pi_host)
+        self.pi_ip_entry.grid(row=0, column=1, padx=(5, 0), pady=5)
         
-        # Quick access buttons
-        quick_btn_frame = ttk.Frame(quick_frame)
-        quick_btn_frame.pack(fill=tk.X)
+        ttk.Label(config_frame, text="Port:").grid(row=0, column=2, sticky=tk.W, padx=(10, 0), pady=5)
+        self.pi_port_entry = ttk.Entry(config_frame, width=10)
+        self.pi_port_entry.insert(0, str(self.pi_port))
+        self.pi_port_entry.grid(row=0, column=3, padx=(5, 0), pady=5)
         
-        ttk.Button(quick_btn_frame, text="📱 Open Pi Stream in Browser", 
-                  command=self.open_pi_browser).pack(side=tk.LEFT, padx=(0, 5))
-        ttk.Button(quick_btn_frame, text="🖥️ Open PC Viewer Only", 
-                  command=self.open_pc_viewer_only).pack(side=tk.LEFT, padx=5)
+        # Control buttons
+        button_frame = ttk.Frame(main_frame)
+        button_frame.grid(row=3, column=0, columnspan=2, pady=10)
         
-    def log_message(self, message):
-        """Log a message to the status text area"""
+        self.check_button = ttk.Button(button_frame, text="🔍 Check Pi Status", 
+                                     command=self.check_pi_status)
+        self.check_button.grid(row=0, column=0, padx=5)
+        
+        self.start_pi_button = ttk.Button(button_frame, text="🚀 Start Pi Streaming", 
+                                        command=self.start_pi_streaming)
+        self.start_pi_button.grid(row=0, column=1, padx=5)
+        
+        self.viewer_button = ttk.Button(button_frame, text="📺 Open Camera Viewer", 
+                                      command=self.open_camera_viewer, state="disabled")
+        self.viewer_button.grid(row=0, column=2, padx=5)
+        
+        # Log frame
+        log_frame = ttk.LabelFrame(main_frame, text="System Log", padding="10")
+        log_frame.grid(row=4, column=0, columnspan=2, sticky=(tk.W, tk.E, tk.N, tk.S), pady=(0, 10))
+        
+        self.log_text = tk.Text(log_frame, height=12, width=70)
+        scrollbar = ttk.Scrollbar(log_frame, orient="vertical", command=self.log_text.yview)
+        self.log_text.configure(yscrollcommand=scrollbar.set)
+        
+        self.log_text.grid(row=0, column=0, sticky=(tk.W, tk.E, tk.N, tk.S))
+        scrollbar.grid(row=0, column=1, sticky=(tk.N, tk.S))
+        
+        # Configure grid weights
+        self.root.columnconfigure(0, weight=1)
+        self.root.rowconfigure(0, weight=1)
+        main_frame.columnconfigure(0, weight=1)
+        main_frame.rowconfigure(4, weight=1)
+        log_frame.columnconfigure(0, weight=1)
+        log_frame.rowconfigure(0, weight=1)
+        
+        # Start initial check
+        self.root.after(1000, self.check_pi_status)
+    
+    def log(self, message):
+        """Add message to log"""
         timestamp = time.strftime("%H:%M:%S")
-        self.status_text.insert(tk.END, f"[{timestamp}] {message}\n")
-        self.status_text.see(tk.END)
+        log_message = f"[{timestamp}] {message}\n"
+        self.log_text.insert(tk.END, log_message)
+        self.log_text.see(tk.END)
         self.root.update_idletasks()
-        
-    def test_pi_connection(self):
-        """Test connection to Raspberry Pi"""
-        self.log_message("Testing connection to Raspberry Pi...")
-        
-        def test_connection():
-            try:
-                url = f"http://{self.pi_ip.get()}:{self.pi_port.get()}/status"
-                response = requests.get(url, timeout=5)
-                if response.status_code == 200:
-                    status = response.json()
-                    self.root.after(0, lambda: self.log_message("✅ Pi connection successful!"))
-                    self.root.after(0, lambda: self.log_message(f"   Camera available: {status.get('camera_available', 'Unknown')}"))
-                    self.root.after(0, lambda: self.log_message(f"   Stream running: {status.get('running', 'Unknown')}"))
-                else:
-                    self.root.after(0, lambda: self.log_message(f"❌ Pi connection failed: HTTP {response.status_code}"))
-            except Exception as e:
-                error_msg = str(e)
-                self.root.after(0, lambda: self.log_message(f"❌ Pi connection failed: {error_msg}"))
-        
-        # Run test in separate thread
-        threading.Thread(target=test_connection, daemon=True).start()
+        print(log_message.strip())
     
-    def setup_ssh_authentication(self):
-        """Setup SSH key-based authentication"""
-        self.log_message("🔐 Setting up SSH authentication...")
-        self.log_message(f"   Using Pi IP: {self.pi_ip.get()}")
-        self.log_message(f"   Using Pi User: {self.pi_user.get()}")
+    def check_pi_status(self):
+        """Check Pi connectivity and streaming service"""
+        self.log("🔍 Checking Pi status...")
+        self.status_label.config(text="Status: Checking...", foreground="orange")
         
-        def setup_auth():
+        def check_thread():
             try:
-                # Initialize SSH manager with current settings
-                self.ssh_manager = SSHManager(self.pi_ip.get(), self.pi_user.get())
+                # Update configuration
+                self.pi_host = self.pi_ip_entry.get()
+                self.pi_port = int(self.pi_port_entry.get())
                 
-                # Setup complete authentication
-                success = self.ssh_manager.setup_complete_authentication()
+                # Check connectivity
+                self.log(f"📡 Pinging {self.pi_host}...")
+                result = subprocess.run(['ping', '-n', '1', self.pi_host], 
+                                      capture_output=True, text=True, timeout=5)
                 
-                if success:
-                    self.root.after(0, lambda: self.log_message("✅ SSH authentication setup complete!"))
-                    self.root.after(0, lambda: self.log_message("   No more password prompts!"))
-                else:
-                    self.root.after(0, lambda: self.log_message("❌ SSH authentication setup failed"))
-                    self.root.after(0, lambda: self.log_message("   Check your Pi IP and username settings"))
-                    
-            except Exception as e:
-                error_msg = str(e)
-                self.root.after(0, lambda: self.log_message(f"❌ SSH setup error: {error_msg}"))
-        
-        # Run setup in separate thread
-        threading.Thread(target=setup_auth, daemon=True).start()
-    
-    def ensure_ssh_manager(self):
-        """Ensure SSH manager is initialized"""
-        if not self.ssh_manager:
-            self.ssh_manager = SSHManager(self.pi_ip.get(), self.pi_user.get())
-        return self.ssh_manager
-        
-    def launch_system(self):
-        """Launch the complete camera system"""
-        self.log_message("🚀 Starting Camera System...")
-        
-        # Disable launch button and enable stop button
-        self.launch_btn.config(state=tk.DISABLED)
-        self.stop_btn.config(state=tk.NORMAL)
-        
-        # Start Pi camera stream (if not already running)
-        self.start_pi_stream()
-        
-        # Start PC camera viewer
-        self.start_pc_viewer()
-        
-        # Open Pi stream in browser after a short delay
-        self.root.after(3000, self.open_pi_browser)
-        
-    def start_pi_stream(self):
-        """Start the Pi camera stream"""
-        self.log_message("📡 Starting Pi camera stream...")
-        
-        def start_stream():
-            try:
-                # Check if stream is already running
-                url = f"http://{self.pi_ip.get()}:{self.pi_port.get()}/status"
-                response = requests.get(url, timeout=3)
-                if response.status_code == 200:
-                    self.root.after(0, lambda: self.log_message("✅ Pi camera stream already running"))
+                if result.returncode != 0:
+                    self.root.after(0, lambda: self.log("❌ Pi is not reachable"))
+                    self.root.after(0, lambda: self.status_label.config(
+                        text="Status: Pi Offline", foreground="red"))
                     return
-            except:
-                pass
-            
-            # Try to start the stream on Pi using SSH
-            try:
-                ssh_manager = self.ensure_ssh_manager()
                 
-                # Check if SSH authentication is working
-                if ssh_manager.test_key_authentication():
-                    self.root.after(0, lambda: self.log_message("🔐 SSH authentication working"))
-                    
-                    # Try to start the camera service
-                    success, stdout, stderr = ssh_manager.run_ssh_command("sudo systemctl start camera-stream.service")
-                    if success:
-                        self.root.after(0, lambda: self.log_message("✅ Started camera streaming service"))
+                self.log("✅ Pi is reachable")
+                
+                # Check streaming service
+                self.log(f"🌐 Checking streaming service at {self.pi_host}:{self.pi_port}...")
+                try:
+                    response = requests.get(f'http://{self.pi_host}:{self.pi_port}/status', timeout=5)
+                    if response.status_code == 200:
+                        self.log("✅ Streaming service is running")
+                        self.root.after(0, lambda: self.status_label.config(
+                            text="Status: Ready", foreground="green"))
+                        self.root.after(0, lambda: self.viewer_button.config(state="normal"))
                     else:
-                        self.root.after(0, lambda: self.log_message("⚠️ Could not start service, trying manual start"))
-                        # Try manual start
-                        success, stdout, stderr = ssh_manager.run_ssh_command("cd ~/kinect_ws && python3 camera_streamer.py &")
-                        if success:
-                            self.root.after(0, lambda: self.log_message("✅ Started camera stream manually"))
-                        else:
-                            self.root.after(0, lambda: self.log_message(f"⚠️ Manual start failed: {stderr}"))
+                        self.log(f"⚠️ Streaming service returned status {response.status_code}")
+                        self.root.after(0, lambda: self.status_label.config(
+                            text="Status: Pi Online, Service Down", foreground="orange"))
+                except requests.exceptions.RequestException as e:
+                    self.log(f"❌ Streaming service not responding: {e}")
+                    self.root.after(0, lambda: self.status_label.config(
+                        text="Status: Pi Online, Service Down", foreground="orange"))
+                
+            except Exception as e:
+                self.log(f"❌ Error checking Pi status: {e}")
+                self.root.after(0, lambda: self.status_label.config(
+                    text="Status: Error", foreground="red"))
+        
+        threading.Thread(target=check_thread, daemon=True).start()
+    
+    def start_pi_streaming(self):
+        """Start Pi streaming service"""
+        self.log("🚀 Starting Pi streaming service...")
+        
+        def start_thread():
+            try:
+                # Run the start streaming script
+                script_path = os.path.join(os.path.dirname(__file__), 'start_pi_streaming.py')
+                if os.path.exists(script_path):
+                    result = subprocess.run([sys.executable, script_path], 
+                                          capture_output=True, text=True, input="\n".join([
+                                              self.pi_host, "ls", "pointsperspectivedanglecrouches"
+                                          ]))
+                    
+                    if result.returncode == 0:
+                        self.log("✅ Pi streaming service started")
+                        self.root.after(0, lambda: self.check_pi_status())
+                    else:
+                        self.log(f"❌ Failed to start streaming service: {result.stderr}")
                 else:
-                    self.root.after(0, lambda: self.log_message("⚠️ SSH authentication not working"))
-                    self.root.after(0, lambda: self.log_message("   Click 'Setup SSH Auth' to fix this"))
-                    self.root.after(0, lambda: self.log_message("   Or start camera_streamer.py manually on your Pi"))
+                    self.log("❌ start_pi_streaming.py not found")
                     
             except Exception as e:
-                error_msg = str(e)
-                self.root.after(0, lambda: self.log_message(f"⚠️ Could not start Pi stream: {error_msg}"))
+                self.log(f"❌ Error starting streaming service: {e}")
         
-        threading.Thread(target=start_stream, daemon=True).start()
-        
-    def start_pc_viewer(self):
-        """Start the PC camera viewer"""
-        self.log_message("🖥️ Starting PC camera viewer...")
+        threading.Thread(target=start_thread, daemon=True).start()
+    
+    def open_camera_viewer(self):
+        """Open the camera viewer"""
+        self.log("📺 Opening camera viewer...")
         
         try:
-            # Get the directory of this script
-            script_dir = os.path.dirname(os.path.abspath(__file__))
-            viewer_script = os.path.join(script_dir, "windows_camera_viewer.py")
+            # Update configuration
+            self.pi_host = self.pi_ip_entry.get()
+            self.pi_port = int(self.pi_port_entry.get())
             
-            if not os.path.exists(viewer_script):
-                self.log_message("❌ PC viewer script not found!")
+            # Get the script directory
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            viewer_file = os.path.join(script_dir, 'windows_camera_viewer_fixed.py')
+            
+            if not os.path.exists(viewer_file):
+                self.log("❌ Camera viewer file not found")
+                messagebox.showerror("Error", "Camera viewer file not found!")
                 return
             
-            # Start the viewer process
-            self.pc_viewer_process = subprocess.Popen([
-                sys.executable, viewer_script
-            ], cwd=script_dir)
+            # Try different Python commands
+            python_commands = ['python', 'python3', 'py']
             
-            self.log_message("✅ PC camera viewer started")
-            
-        except Exception as e:
-            self.log_message(f"❌ Failed to start PC viewer: {e}")
-            
-    def stop_system(self):
-        """Stop all camera system components"""
-        self.log_message("⏹️ Stopping camera system...")
-        
-        # Stop PC viewer
-        if self.pc_viewer_process:
-            try:
-                self.pc_viewer_process.terminate()
-                self.pc_viewer_process.wait(timeout=5)
-                self.log_message("✅ PC camera viewer stopped")
-            except:
+            for python_cmd in python_commands:
                 try:
-                    self.pc_viewer_process.kill()
-                    self.log_message("✅ PC camera viewer force stopped")
-                except:
-                    self.log_message("⚠️ Could not stop PC camera viewer")
-            finally:
-                self.pc_viewer_process = None
-        
-        # Try to stop Pi stream via SSH
-        try:
-            ssh_manager = self.ensure_ssh_manager()
-            if ssh_manager.test_key_authentication():
-                success, stdout, stderr = ssh_manager.run_ssh_command("sudo systemctl stop camera-stream.service")
-                if success:
-                    self.log_message("✅ Pi camera stream service stopped")
-                else:
-                    self.log_message("⚠️ Could not stop Pi service (may not be running)")
-            else:
-                self.log_message("ℹ️ Pi stream continues running (SSH auth not working)")
-        except Exception as e:
-            self.log_message(f"ℹ️ Pi stream continues running (error: {e})")
-        
-        # Re-enable launch button and disable stop button
-        self.launch_btn.config(state=tk.NORMAL)
-        self.stop_btn.config(state=tk.DISABLED)
-        
-    def open_pi_browser(self):
-        """Open Pi camera stream in browser"""
-        url = f"http://{self.pi_ip.get()}:{self.pi_port.get()}"
-        self.log_message(f"🌐 Opening Pi stream in browser: {url}")
-        try:
-            webbrowser.open(url)
-        except Exception as e:
-            self.log_message(f"❌ Could not open browser: {e}")
+                    viewer_cmd = [python_cmd, viewer_file]
+                    subprocess.Popen(viewer_cmd, shell=True)
+                    self.log(f"✅ Camera viewer opened using {python_cmd}")
+                    return
+                except FileNotFoundError:
+                    continue
             
-    def open_pc_viewer_only(self):
-        """Open only the PC camera viewer"""
-        self.log_message("🖥️ Opening PC camera viewer only...")
-        self.start_pc_viewer()
-        
-    def on_closing(self):
-        """Handle window closing"""
-        if self.pc_viewer_process:
-            self.stop_system()
-        self.root.destroy()
-        
+            # If all Python commands fail, try opening with default program
+            self.log("⚠️ Python command not found, trying default program...")
+            os.startfile(viewer_file)
+            self.log("✅ Camera viewer opened with default program")
+            
+        except Exception as e:
+            self.log(f"❌ Failed to open camera viewer: {e}")
+            messagebox.showerror("Error", f"Failed to open camera viewer:\n{e}")
+    
     def run(self):
-        """Run the launcher application"""
-        self.log_message("🎯 Camera System Launcher ready!")
-        self.log_message("Configure your Pi IP address and click 'Launch Camera System'")
-        
-        # Handle window closing
-        self.root.protocol("WM_DELETE_WINDOW", self.on_closing)
-        
-        # Start the application
+        """Run the launcher"""
+        self.log("🚀 Camera System Launcher started")
         self.root.mainloop()
 
-def main():
-    """Main function"""
-    print("Starting Camera System Launcher...")
-    
-    # Check if required modules are available
-    try:
-        import requests
-        import tkinter
-    except ImportError as e:
-        print(f"Error: Required module not available: {e}")
-        print("Please install required packages:")
-        print("pip install requests")
-        input("Press Enter to exit...")
-        return 1
-    
-    # Create and run the launcher
+if __name__ == '__main__':
     launcher = CameraSystemLauncher()
     launcher.run()
-    
-    return 0
-
-if __name__ == '__main__':
-    sys.exit(main())

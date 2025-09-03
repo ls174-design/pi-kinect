@@ -1,5 +1,5 @@
 @echo off
-echo Simple File Transfer to Raspberry Pi
+echo Setup and Start Pi Streaming Service
 echo ====================================
 
 REM Check if Python is available
@@ -18,11 +18,16 @@ if errorlevel 1 (
 )
 
 echo.
-echo This will simply upload the diagnostic files to your Pi.
+echo This will:
+echo 1. Copy the streaming script to your Pi
+echo 2. Start the Kinect streaming service
+echo 3. Test the connection
+echo.
+echo Make sure your Pi is powered on and connected to the network.
 echo.
 
-python simple_file_transfer.py
+python setup_and_start_streaming.py
 
 echo.
-echo File transfer complete!
+echo Setup and start complete!
 pause
