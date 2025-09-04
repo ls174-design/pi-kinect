@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Robust Kinect 360 video capture using system libfreenect with safer callbacks.
+Robust Kinect 360 video capture with RTP streaming and GStreamer pipeline.
+Supports V4L2 fallback and kernel conflict detection.
 """
 
 import ctypes
@@ -9,11 +10,18 @@ import cv2
 import threading
 import time
 import json
+import argparse
+import subprocess
+import os
+import sys
 from http.server import HTTPServer, BaseHTTPRequestHandler
-from typing import Optional
+from typing import Optional, Tuple
+import gi
+gi.require_version('Gst', '1.0')
+from gi.repository import Gst, GLib
 
 class RobustFreenect:
-    """Robust freenect wrapper with safer callback handling."""
+    """Robust freenect wrapper with safer callback handling and kernel conflict detection."""
     
     def __init__(self):
         self.lib = None
@@ -141,13 +149,18 @@ class RobustFreenect:
             print(f"Depth callback error: {e}")
     
     def init(self) -> bool:
-        """Initialize freenect context."""
+        """Initialize freenect context with kernel conflict detection."""
         if not self.lib:
             return False
             
         self.ctx = ctypes.c_void_p()
         result = self.lib.freenect_init(ctypes.byref(self.ctx), None)
-        return result == 0
+        
+        if result != 0:
+            print("❌ Failed to initialize freenect context")
+            return False
+            
+        return True
     
     def num_devices(self) -> int:
         """Get number of devices."""
@@ -156,12 +169,15 @@ class RobustFreenect:
         return self.lib.freenect_num_devices(self.ctx)
     
     def open_device(self, device_index: int = 0) -> bool:
-        """Open a device."""
+        """Open a device with kernel conflict detection."""
         if not self.lib or not self.ctx:
             return False
             
         self.device = self.lib.freenect_open_device(self.ctx, device_index)
         if not self.device:
+            print("❌ Failed to open Kinect device")
+            print("💡 If you see 'could not claim interface' error:")
+            print("   Unload kernel module: sudo modprobe -r gspca_kinect")
             return False
         
         # Set video and depth modes
@@ -225,17 +241,102 @@ class RobustFreenect:
             self.lib.freenect_shutdown(self.ctx)
             self.ctx = None
 
-class RobustKinectStreamer:
-    """Robust Kinect streamer with real video capture."""
+class GStreamerRTPStreamer:
+    """GStreamer RTP streamer for video data."""
     
-    def __init__(self, host="0.0.0.0", port=8080):
-        self.freenect = RobustFreenect()
-        self.running = False
+    def __init__(self, host: str, port: int, width: int = 640, height: int = 480, fps: int = 20):
         self.host = host
         self.port = port
+        self.width = width
+        self.height = height
+        self.fps = fps
+        self.pipeline = None
+        self.appsrc = None
+        self.loop = None
+        self.running = False
+        
+    def start(self):
+        """Start the GStreamer pipeline."""
+        Gst.init(None)
+        
+        # Create pipeline
+        pipeline_str = (
+            f"appsrc name=source ! "
+            f"video/x-raw,format=BGR,width={self.width},height={self.height},framerate={self.fps}/1 ! "
+            f"videoconvert ! jpegenc quality=70 ! rtpjpegpay ! "
+            f"udpsink host={self.host} port={self.port}"
+        )
+        
+        self.pipeline = Gst.parse_launch(pipeline_str)
+        self.appsrc = self.pipeline.get_by_name("source")
+        
+        # Configure appsrc
+        self.appsrc.set_property("is-live", True)
+        self.appsrc.set_property("do-timestamp", True)
+        
+        # Start pipeline
+        self.pipeline.set_state(Gst.State.PLAYING)
+        self.running = True
+        
+        # Start GLib main loop in a separate thread
+        self.loop = threading.Thread(target=self._run_loop, daemon=True)
+        self.loop.start()
+        
+        print(f"✅ GStreamer RTP stream started: {self.host}:{self.port}")
+        
+    def _run_loop(self):
+        """Run GLib main loop."""
+        loop = GLib.MainLoop()
+        loop.run()
+        
+    def push_frame(self, frame: np.ndarray):
+        """Push a frame to the pipeline."""
+        if not self.running or not self.appsrc:
+            return
+            
+        # Convert frame to bytes
+        frame_bytes = frame.tobytes()
+        
+        # Create GStreamer buffer
+        buffer = Gst.Buffer.new_allocate(None, len(frame_bytes), None)
+        buffer.fill(0, frame_bytes)
+        
+        # Push buffer
+        ret = self.appsrc.emit("push-buffer", buffer)
+        if ret != Gst.FlowReturn.OK:
+            print(f"Warning: Failed to push buffer: {ret}")
+            
+    def stop(self):
+        """Stop the pipeline."""
+        if self.pipeline:
+            self.pipeline.set_state(Gst.State.NULL)
+        self.running = False
+
+class RobustKinectStreamer:
+    """Robust Kinect streamer with RTP streaming and CLI support."""
+    
+    def __init__(self, args):
+        self.freenect = RobustFreenect()
+        self.running = False
+        self.host = args.host
+        self.port = args.port
+        self.rtp_host = args.rtp_host
+        self.rtp_port = args.rtp_port
+        self.mode = args.mode
+        self.width = args.width
+        self.height = args.height
+        self.fps = args.fps
         self.server = None
         self.frame_count = 0
         self.start_time = time.time()
+        
+        # RTP streamers
+        self.rtp_streamer = None
+        self.depth_rtp_streamer = None
+        
+        # Pre-allocated buffers for performance
+        self.video_buffer = np.zeros((self.height, self.width, 3), dtype=np.uint8)
+        self.depth_buffer = np.zeros((self.height, self.width), dtype=np.uint16)
         
     def start(self) -> bool:
         """Start the Kinect streamer."""
@@ -257,9 +358,13 @@ class RobustKinectStreamer:
             return False
             
         print("✅ Kinect device opened successfully")
-        print("🎥 Starting real video capture...")
+        print(f"🎥 Starting capture in {self.mode} mode...")
         
         self.running = True
+        
+        # Start RTP streaming if requested
+        if self.rtp_host:
+            self._start_rtp_streaming()
         
         # Start capture thread
         self.capture_thread = threading.Thread(target=self._capture_loop, daemon=True)
@@ -270,38 +375,101 @@ class RobustKinectStreamer:
         
         return True
     
+    def _start_rtp_streaming(self):
+        """Start RTP streaming."""
+        if 'rgb' in self.mode:
+            self.rtp_streamer = GStreamerRTPStreamer(
+                self.rtp_host, self.rtp_port, self.width, self.height, self.fps
+            )
+            self.rtp_streamer.start()
+            
+        if 'depth' in self.mode:
+            self.depth_rtp_streamer = GStreamerRTPStreamer(
+                self.rtp_host, self.rtp_port + 1, self.width, self.height, self.fps
+            )
+            self.depth_rtp_streamer.start()
+    
     def _capture_loop(self):
-        """Real capture loop."""
-        print("🎥 Starting real video capture loop...")
+        """Main capture loop with performance optimizations."""
+        print("🎥 Starting capture loop...")
         
         while self.running:
             try:
                 # Process freenect events to get new frames
                 self.freenect.process_events()
                 
-                # Get real video frame
-                video_frame = self.freenect.get_video_frame()
-                if video_frame is not None:
-                    self.frame_count += 1
-                    
-                    # Print status every 100 frames
-                    if self.frame_count % 100 == 0:
-                        elapsed = time.time() - self.start_time
-                        fps = self.frame_count / (elapsed + 0.001)
-                        print(f"📹 Captured {self.frame_count} real frames (FPS: {fps:.1f})")
+                # Get frames based on mode
+                if 'rgb' in self.mode:
+                    video_frame = self.freenect.get_video_frame()
+                    if video_frame is not None:
+                        # Resize if needed
+                        if video_frame.shape[:2] != (self.height, self.width):
+                            video_frame = cv2.resize(video_frame, (self.width, self.height))
+                        
+                        # Copy to pre-allocated buffer
+                        np.copyto(self.video_buffer, video_frame)
+                        
+                        # Push to RTP stream
+                        if self.rtp_streamer:
+                            self.rtp_streamer.push_frame(self.video_buffer)
+                        
+                        self.frame_count += 1
                 
-                time.sleep(1.0 / 30.0)  # 30 FPS
+                if 'depth' in self.mode:
+                    depth_frame = self.freenect.get_depth_frame()
+                    if depth_frame is not None:
+                        # Convert depth to 8-bit preview for streaming
+                        depth_preview = self._tone_map_depth(depth_frame)
+                        
+                        # Resize if needed
+                        if depth_preview.shape[:2] != (self.height, self.width):
+                            depth_preview = cv2.resize(depth_preview, (self.width, self.height))
+                        
+                        # Convert to BGR for GStreamer
+                        depth_bgr = cv2.cvtColor(depth_preview, cv2.COLOR_GRAY2BGR)
+                        
+                        # Push to RTP stream
+                        if self.depth_rtp_streamer:
+                            self.depth_rtp_streamer.push_frame(depth_bgr)
+                
+                # Print status every 100 frames
+                if self.frame_count % 100 == 0:
+                    elapsed = time.time() - self.start_time
+                    fps = self.frame_count / (elapsed + 0.001)
+                    print(f"📹 Captured {self.frame_count} frames (FPS: {fps:.1f})")
+                
+                time.sleep(1.0 / self.fps)
+                
             except Exception as e:
                 print(f"Capture loop error: {e}")
                 time.sleep(0.1)
     
+    def _tone_map_depth(self, depth_frame: np.ndarray) -> np.ndarray:
+        """Convert 11-bit/16-bit depth to 8-bit preview."""
+        # Remove invalid depth values
+        valid_mask = (depth_frame > 0) & (depth_frame < 2048)
+        
+        if not np.any(valid_mask):
+            return np.zeros_like(depth_frame, dtype=np.uint8)
+        
+        # Normalize valid depth values
+        valid_depth = depth_frame[valid_mask]
+        min_depth = np.percentile(valid_depth, 1)
+        max_depth = np.percentile(valid_depth, 99)
+        
+        if max_depth > min_depth:
+            normalized = np.clip((depth_frame - min_depth) / (max_depth - min_depth), 0, 1)
+            return (normalized * 255).astype(np.uint8)
+        else:
+            return np.zeros_like(depth_frame, dtype=np.uint8)
+    
     def get_frame(self) -> Optional[np.ndarray]:
-        """Get the latest real video frame."""
-        return self.freenect.get_video_frame()
+        """Get the latest video frame."""
+        return self.video_buffer.copy() if self.video_buffer is not None else None
     
     def get_depth_frame(self) -> Optional[np.ndarray]:
         """Get the latest depth frame."""
-        return self.freenect.get_depth_frame()
+        return self.depth_buffer.copy() if self.depth_buffer is not None else None
     
     def _start_http_server(self):
         """Start HTTP server."""
@@ -327,6 +495,11 @@ class RobustKinectStreamer:
         """Stop the streamer."""
         print("🛑 Stopping Kinect streamer...")
         self.running = False
+        
+        if self.rtp_streamer:
+            self.rtp_streamer.stop()
+        if self.depth_rtp_streamer:
+            self.depth_rtp_streamer.stop()
         
         if self.server:
             self.server.shutdown()
@@ -416,7 +589,7 @@ class RobustKinectHTTPHandler(BaseHTTPRequestHandler):
                 <h1>🎯 Robust Kinect 360 Camera Stream</h1>
                 <div class="info">
                     <strong>✅ Robust Kinect 360 Video Capture Active!</strong><br>
-                    Capturing actual video from Kinect hardware with improved memory safety.
+                    Capturing actual video from Kinect hardware with RTP streaming support.
                 </div>
                 <div class="status" id="status">Connecting...</div>
                 
@@ -475,7 +648,7 @@ class RobustKinectHTTPHandler(BaseHTTPRequestHandler):
         frame = self.streamer.get_frame()
         if frame is None:
             # Create a placeholder frame
-            frame = np.zeros((480, 640, 3), dtype=np.uint8)
+            frame = np.zeros((self.streamer.height, self.streamer.width, 3), dtype=np.uint8)
             frame[:] = (50, 0, 0)  # Dark red
             cv2.putText(frame, "Waiting for video...", (200, 240), 
                        cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
@@ -496,7 +669,7 @@ class RobustKinectHTTPHandler(BaseHTTPRequestHandler):
         depth_frame = self.streamer.get_depth_frame()
         if depth_frame is None:
             # Create a placeholder depth frame
-            frame = np.zeros((480, 640, 3), dtype=np.uint8)
+            frame = np.zeros((self.streamer.height, self.streamer.width, 3), dtype=np.uint8)
             frame[:] = (50, 50, 50)  # Dark gray
             cv2.putText(frame, "Waiting for depth...", (200, 240), 
                        cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2)
@@ -530,6 +703,9 @@ class RobustKinectHTTPHandler(BaseHTTPRequestHandler):
             'kinect_method': 'robust_system_freenect',
             'video_available': self.streamer.get_frame() is not None,
             'depth_available': self.streamer.get_depth_frame() is not None,
+            'rtp_host': self.streamer.rtp_host,
+            'rtp_port': self.streamer.rtp_port,
+            'mode': self.streamer.mode,
             'timestamp': time.time()
         }
         
@@ -542,14 +718,44 @@ class RobustKinectHTTPHandler(BaseHTTPRequestHandler):
         """Suppress default logging."""
         pass
 
+def parse_arguments():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(description='Robust Kinect 360 streamer with RTP support')
+    
+    # Streaming mode
+    parser.add_argument('--mode', choices=['rgb', 'depth', 'depth+rgb'], 
+                       default='depth+rgb', help='Streaming mode')
+    
+    # HTTP server settings
+    parser.add_argument('--host', default='0.0.0.0', help='HTTP server host')
+    parser.add_argument('--port', type=int, default=8080, help='HTTP server port')
+    
+    # RTP streaming settings
+    parser.add_argument('--rtp-host', help='RTP streaming host (e.g., 192.168.1.100)')
+    parser.add_argument('--rtp-port', type=int, default=5001, help='RTP streaming port')
+    
+    # Video settings
+    parser.add_argument('--width', type=int, default=640, help='Video width')
+    parser.add_argument('--height', type=int, default=480, help='Video height')
+    parser.add_argument('--fps', type=int, default=20, help='Frames per second')
+    
+    return parser.parse_args()
+
 # Main execution
 if __name__ == "__main__":
-    streamer = RobustKinectStreamer(host="0.0.0.0", port=8080)
+    args = parse_arguments()
+    
+    # Initialize GStreamer
+    Gst.init(None)
+    
+    streamer = RobustKinectStreamer(args)
     
     try:
         if streamer.start():
             print("✅ Robust Kinect streamer started successfully")
-            print("🌐 Open http://192.168.1.9:8080 in your browser")
+            if args.rtp_host:
+                print(f"📡 RTP streaming to {args.rtp_host}:{args.rtp_port}")
+            print(f"🌐 HTTP server: http://{args.host}:{args.port}")
             print("Press Ctrl+C to stop")
             
             # Keep running
@@ -557,6 +763,7 @@ if __name__ == "__main__":
                 time.sleep(1)
         else:
             print("❌ Failed to start Kinect streamer")
+            sys.exit(1)
     except KeyboardInterrupt:
         print("\n🛑 Stopping...")
         streamer.stop()

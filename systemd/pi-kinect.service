@@ -1,0 +1,18 @@
+[Unit]
+Description=Pi Kinect Wi-Fi streamer
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Environment=PC_IP=%i
+Environment=REPO_DIR=/home/ls/pi-kinect
+ExecStart=/home/ls/pi-kinect/scripts/v4l2_rgb_or_freenect.sh
+Restart=always
+RestartSec=2
+User=ls
+WorkingDirectory=/home/ls/pi-kinect
+StandardOutput=append:/var/log/pi-kinect.log
+StandardError=append:/var/log/pi-kinect.log
+
+[Install]
+WantedBy=multi-user.target
